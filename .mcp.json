@@ -1,11 +1,14 @@
 {
   "mcpServers": {
     "google-sheets": {
-      "command": "uvx",
-      "args": ["mcp-google-sheets@latest"],
+      "command": "/usr/local/bin/node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/servers/server.js"
+      ],
       "env": {
-        "CREDENTIALS_PATH": "${GOOGLE_OAUTH_CREDENTIALS_PATH}",
-        "TOKEN_PATH": "${GOOGLE_OAUTH_TOKEN_PATH}"
+        "GOOGLE_CLIENT_ID": "${GOOGLE_SHEETS_CLIENT_ID}",
+        "GOOGLE_CLIENT_SECRET": "${GOOGLE_SHEETS_CLIENT_SECRET}",
+        "GOOGLE_REFRESH_TOKEN": "${GOOGLE_SHEETS_REFRESH_TOKEN}"
       }
     }
   }

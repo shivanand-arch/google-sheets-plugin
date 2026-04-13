@@ -1,0 +1,14 @@
+{
+  "name": "google-sheets-mcp-server",
+  "version": "0.3.0",
+  "description": "Self-contained MCP server for Google Sheets API (OAuth2, NDJSON stdio)",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "setup-auth": "node auth-setup.js"
+  },
+  "dependencies": {
+    "googleapis": "^144.0.0"
+  }
+}

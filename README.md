@@ -1,101 +1,114 @@
-# Google Sheets Plugin
+# Google Sheets Plugin (Claude Code)
 
-Access, read, write, analyze, and manage Google Sheets from Claude Code or Claude Cowork.
+Access, read, write, analyze, and manage Google Sheets from Claude Code.
 
-**Auth**: OAuth 2.0 — each user signs in with their own Exotel Google account on first use. No service account sharing or IT involvement needed.
+**Self-contained**: bundles its own Node MCP server under `servers/` — no `uvx`, no external Python packages, no service account.
 
-## Quick Install (For Exotel Colleagues)
+**Auth**: OAuth 2.0. Each colleague signs in once with their own Exotel Google account. The plugin reuses a shared Exotel OAuth **app identity** (same Client ID as the `google-chat` plugin); your individual refresh token is stored locally in your shell profile.
+
+---
+
+## Install (Exotel Colleagues)
 
 ### Prerequisites
+- **Node.js 18+** (`brew install node` on macOS)
+- An Exotel Google account
 
-- `uv` installed: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- An OAuth 2.0 Client ID JSON from Google Cloud Console (see "Getting OAuth Credentials" below)
-
-### Install the Plugin
-
+### 1. Add the marketplace & install
 ```bash
-# 1. If you hit SSH auth errors, rewrite GitHub SSH URLs to HTTPS (uses gh CLI auth)
+# If you hit SSH auth errors when Claude clones the repo, rewrite SSH → HTTPS (uses your gh CLI auth)
 git config --global url."https://github.com/".insteadOf "git@github.com:"
 
-# 2. Add the Exotel plugins marketplace
+# Add the Exotel marketplace
 claude plugin marketplace add shivanand-arch/google-sheets-plugin
 
-# 3. Install the plugin
+# Install the plugin
 claude plugin install google-sheets@exotel-plugins
 ```
 
-### Configure OAuth
-
+### 2. Run the OAuth setup
 ```bash
-cd ~/.claude/plugins/cache/exotel-plugins/google-sheets/0.1.0 && ./setup.sh
+cd ~/.claude/plugins/cache/exotel-plugins/google-sheets/0.3.0 && ./setup.sh
+```
+- Opens a Google OAuth URL in your terminal
+- Sign in with your Exotel account, grant access, paste the code back
+- The script writes `GOOGLE_SHEETS_REFRESH_TOKEN` to your `~/.zshrc` (or `~/.bashrc`)
+
+### 3. Restart
+```bash
+source ~/.zshrc        # or open a new terminal
+# then restart Claude Code
 ```
 
-Restart Claude Code. On first query, a browser window will open asking you to sign in with your Exotel account. The auth token persists for future sessions.
+Try: **"List my Google spreadsheets"**
 
-## Getting OAuth Credentials
-
-One-time GCP setup (required per user, or one shared credential can work for the whole org):
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a project (or use an existing one)
-3. Enable **Google Sheets API** and **Google Drive API**
-4. Go to **APIs & Services > OAuth consent screen**
-   - User Type: **Internal** (restricts to exotel.com users only)
-   - Fill in app name (e.g., "Claude Google Sheets Plugin")
-5. Go to **APIs & Services > Credentials > Create Credentials > OAuth client ID**
-   - Application type: **Desktop app**
-   - Download the JSON file
-6. Run `./setup.sh` and point it at the downloaded JSON
-
-**Tip**: If you want to share a single OAuth Client ID across all Exotel colleagues, create it once in a shared GCP project under exotel.com and distribute the `client_secret.json` file. Each colleague still authenticates with their own Google account on first use — they just use the same OAuth app identity.
+---
 
 ## Components
 
-| Component | Name | Purpose |
-|-----------|------|---------|
-| MCP Server | `google-sheets` | Connects to Google Sheets API via `mcp-google-sheets` |
-| Skill | `read-sheets` | Read data, list spreadsheets, search, view formulas |
-| Skill | `write-sheets` | Write cells, append rows, batch updates, formatting |
-| Skill | `manage-sheets` | Create spreadsheets, add/rename tabs, share access |
-| Skill | `analyze-sheets` | Summarize data, detect trends, pivot, chart, compare |
+| Component  | Name              | Purpose |
+|------------|-------------------|---------|
+| MCP server | `google-sheets`   | Self-contained Node server (`servers/server.js`) calling Google Sheets + Drive APIs via `googleapis` |
+| Skill      | `read-sheets`     | Read data, list spreadsheets, search, view formulas |
+| Skill      | `write-sheets`    | Write cells, append rows, batch updates, formatting |
+| Skill      | `manage-sheets`   | Create spreadsheets, add/rename tabs, share access |
+| Skill      | `analyze-sheets`  | Summarize, trends, pivots, charts, comparisons |
 
-## Usage
+## Tools (MCP server)
 
-Once installed, use natural language:
+**Read**: `list_spreadsheets`, `search_spreadsheets`, `list_sheets`, `get_sheet_data`, `get_sheet_formulas`, `find_in_spreadsheet`
+
+**Write**: `update_cells`, `append_rows`, `clear_range`, `batch_update_cells`, `format_cells`
+
+**Manage**: `create_spreadsheet`, `add_sheet`, `delete_sheet`, `rename_sheet`, `duplicate_sheet`, `share_spreadsheet`
+
+**Analyze**: `add_chart`
+
+## Usage examples
 
 - "List my spreadsheets"
 - "Read the Sales Q1 sheet"
 - "Add a row to the inventory spreadsheet"
 - "Create a new spreadsheet called Budget 2026"
-- "Analyze trends in the revenue sheet"
+- "Bold the header row and color it light blue"
 - "Add a bar chart for monthly sales"
+- "Share the Budget sheet with alice@exotel.com as writer"
 
-## Manual Configuration (Alternative)
+---
 
-If `setup.sh` doesn't work for you, configure manually:
+## How it works
 
-**a) Add to your `~/.zshrc` or `~/.bashrc`:**
+1. `.mcp.json` points Claude at `${CLAUDE_PLUGIN_ROOT}/servers/server.js` (Node).
+2. `server.js` is SDK-free — reads JSON-RPC messages over stdin (NDJSON), authenticates with `googleapis` using your refresh token, and calls the Sheets/Drive APIs directly.
+3. `.mcp.json` references three env vars — `GOOGLE_SHEETS_CLIENT_ID`, `GOOGLE_SHEETS_CLIENT_SECRET`, `GOOGLE_SHEETS_REFRESH_TOKEN` — all stored in your shell profile. Nothing sensitive is committed to the repo.
+
+### Getting the Client ID / Secret
+Exotel colleagues: reuse the same **Desktop OAuth client** you set up for the `google-chat` plugin — the plugin maintainer (Shivanand) can share the Client ID and Client Secret over an internal channel. Paste them into `setup.sh` when prompted.
+
+Alternatively, create your own Desktop OAuth client in a GCP project with **Google Sheets API** and **Google Drive API** enabled and OAuth consent screen set to "Internal".
+
+## Manual setup (if `setup.sh` fails)
 
 ```bash
-export GOOGLE_OAUTH_CREDENTIALS_PATH="/path/to/client_secret.json"
-export GOOGLE_OAUTH_TOKEN_PATH="$HOME/.claude/google-sheets/token.json"
+cd ~/.claude/plugins/cache/exotel-plugins/google-sheets/0.3.0/servers
+npm install
+export GOOGLE_CLIENT_ID="<your client id>"
+export GOOGLE_CLIENT_SECRET="<your client secret>"
+node auth-setup.js
+# Follow the URL, paste the code, copy the printed refresh token.
+# Then add all three to ~/.zshrc:
+#   export GOOGLE_SHEETS_CLIENT_ID="..."
+#   export GOOGLE_SHEETS_CLIENT_SECRET="..."
+#   export GOOGLE_SHEETS_REFRESH_TOKEN="1//0g..."
 ```
 
-**b) Add to `~/.claude/.mcp.json` under `mcpServers`:**
+## Troubleshooting
 
-```json
-"google-sheets": {
-  "type": "stdio",
-  "command": "uvx",
-  "args": ["mcp-google-sheets@latest"],
-  "env": {
-    "CREDENTIALS_PATH": "${GOOGLE_OAUTH_CREDENTIALS_PATH}",
-    "TOKEN_PATH": "${GOOGLE_OAUTH_TOKEN_PATH}"
-  }
-}
-```
+- **`Missing GOOGLE_*` in Claude logs**: your `GOOGLE_SHEETS_REFRESH_TOKEN` isn't in the shell that launched Claude Code. Re-source your profile or restart the terminal/Claude.
+- **`invalid_grant`**: token was revoked (re-auth by rerunning `./setup.sh`).
+- **Node not found**: the plugin hardcodes `/usr/local/bin/node`. If yours is elsewhere (`which node`), edit `.mcp.json` in the plugin cache directory.
 
-**c) Restart your terminal and Claude Code.**
+---
 
 ## Skills Reference
 

@@ -1,54 +1,65 @@
 #!/bin/bash
-# Google Sheets Plugin — OAuth Setup Script for Claude Code
-# Share this entire folder with colleagues. They run this script to configure everything.
+# Google Sheets Plugin — OAuth Setup (self-contained Node MCP server)
+# Installs deps, runs the OAuth flow, writes credentials to your shell profile.
 
 set -e
+
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 echo "=== Google Sheets Plugin — OAuth Setup ==="
 echo ""
 
-# Check prerequisites
-if ! command -v uvx &> /dev/null && ! command -v uv &> /dev/null; then
-    echo "ERROR: 'uv' is not installed. Install it first:"
-    echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
-    echo "  OR: pip install uv"
+# Check Node
+if ! command -v node &> /dev/null; then
+    echo "ERROR: 'node' is not installed. Install Node.js 18+ first."
+    echo "  macOS:  brew install node"
+    exit 1
+fi
+echo "Node found: $(node --version)"
+
+# Install dependencies if needed
+if [ ! -d "$SCRIPT_DIR/servers/node_modules" ]; then
+    echo ""
+    echo "--- Installing server dependencies (googleapis) ---"
+    (cd "$SCRIPT_DIR/servers" && npm install --production --silent)
+fi
+
+echo ""
+echo "This plugin uses a shared Exotel OAuth app. You need:"
+echo "  1. The OAuth Client ID and Client Secret (ask the plugin maintainer,"
+echo "     or reuse the same values from your google-chat plugin setup)"
+echo "  2. Your Exotel Google account (for the consent flow)"
+echo ""
+read -p "GOOGLE_SHEETS_CLIENT_ID: " CLIENT_ID
+read -p "GOOGLE_SHEETS_CLIENT_SECRET: " CLIENT_SECRET
+
+if [ -z "$CLIENT_ID" ] || [ -z "$CLIENT_SECRET" ]; then
+    echo "ERROR: Client ID and Secret are both required."
     exit 1
 fi
 
-echo "Prerequisites OK (uv/uvx found)"
+export GOOGLE_CLIENT_ID="$CLIENT_ID"
+export GOOGLE_CLIENT_SECRET="$CLIENT_SECRET"
+
+echo ""
+echo "--- Running OAuth2 flow ---"
+echo ""
+echo "A URL will appear below. Open it in your browser, sign in with your"
+echo "Exotel Google account, grant access, then paste the code back here."
 echo ""
 
-echo "This plugin uses OAuth — each user authenticates with their own Exotel"
-echo "Google account. No service account sharing needed."
-echo ""
-echo "PREREQUISITE: You need an OAuth 2.0 Client ID JSON from Google Cloud Console."
-echo ""
-echo "If you don't have one yet:"
-echo "  1. Go to https://console.cloud.google.com/"
-echo "  2. Create a project (or use existing)"
-echo "  3. Enable Google Sheets API and Google Drive API"
-echo "  4. Go to APIs & Services > OAuth consent screen, configure as 'Internal'"
-echo "  5. Go to APIs & Services > Credentials > Create Credentials > OAuth client ID"
-echo "  6. Application type: Desktop app"
-echo "  7. Download the JSON file"
-echo ""
+# Run auth-setup.js interactively; it prints the refresh token at the end.
+OUTPUT=$(node "$SCRIPT_DIR/servers/auth-setup.js" | tee /dev/tty)
 
-read -p "Path to your OAuth Client ID JSON file: " CREDS_PATH
-CREDS_PATH="${CREDS_PATH/#\~/$HOME}"
+REFRESH_TOKEN=$(echo "$OUTPUT" | grep 'GOOGLE_SHEETS_REFRESH_TOKEN=' | sed -E 's/.*GOOGLE_SHEETS_REFRESH_TOKEN="([^"]+)".*/\1/')
 
-if [ ! -f "$CREDS_PATH" ]; then
-    echo "ERROR: File not found: $CREDS_PATH"
+if [ -z "$REFRESH_TOKEN" ]; then
+    echo ""
+    echo "ERROR: Could not capture refresh token. Please re-run and check for errors."
     exit 1
 fi
 
-# Token storage location
-TOKEN_DIR="$HOME/.claude/google-sheets"
-mkdir -p "$TOKEN_DIR"
-TOKEN_PATH="$TOKEN_DIR/token.json"
-
-echo ""
-echo "--- Adding environment variables to your shell profile ---"
-
+# Write credentials into shell profile
 SHELL_PROFILE=""
 if [ -f "$HOME/.zshrc" ]; then
     SHELL_PROFILE="$HOME/.zshrc"
@@ -59,79 +70,28 @@ elif [ -f "$HOME/.bash_profile" ]; then
 fi
 
 if [ -n "$SHELL_PROFILE" ]; then
-    # Remove any old service account config
-    sed -i.bak '/# Google Sheets MCP/,/GOOGLE_DRIVE_FOLDER_ID/d' "$SHELL_PROFILE" 2>/dev/null || true
-    sed -i.bak '/GOOGLE_SERVICE_ACCOUNT_PATH/d' "$SHELL_PROFILE" 2>/dev/null || true
-    sed -i.bak '/GOOGLE_OAUTH_CREDENTIALS_PATH/d' "$SHELL_PROFILE" 2>/dev/null || true
-    sed -i.bak '/GOOGLE_OAUTH_TOKEN_PATH/d' "$SHELL_PROFILE" 2>/dev/null || true
-
+    # Clean up stale entries from older plugin versions
+    sed -i.bak '/GOOGLE_OAUTH_CREDENTIALS_PATH/d;/GOOGLE_OAUTH_TOKEN_PATH/d;/GOOGLE_SHEETS_CLIENT_ID/d;/GOOGLE_SHEETS_CLIENT_SECRET/d;/GOOGLE_SHEETS_REFRESH_TOKEN/d' "$SHELL_PROFILE" 2>/dev/null || true
     echo "" >> "$SHELL_PROFILE"
-    echo "# Google Sheets MCP (OAuth)" >> "$SHELL_PROFILE"
-    echo "export GOOGLE_OAUTH_CREDENTIALS_PATH=\"$CREDS_PATH\"" >> "$SHELL_PROFILE"
-    echo "export GOOGLE_OAUTH_TOKEN_PATH=\"$TOKEN_PATH\"" >> "$SHELL_PROFILE"
-    echo "Added to $SHELL_PROFILE"
+    echo "# Google Sheets plugin (OAuth)" >> "$SHELL_PROFILE"
+    echo "export GOOGLE_SHEETS_CLIENT_ID=\"$CLIENT_ID\"" >> "$SHELL_PROFILE"
+    echo "export GOOGLE_SHEETS_CLIENT_SECRET=\"$CLIENT_SECRET\"" >> "$SHELL_PROFILE"
+    echo "export GOOGLE_SHEETS_REFRESH_TOKEN=\"$REFRESH_TOKEN\"" >> "$SHELL_PROFILE"
+    echo ""
+    echo "Wrote Google Sheets OAuth env vars to $SHELL_PROFILE"
 else
-    echo "Could not find shell profile. Add these manually:"
-    echo "  export GOOGLE_OAUTH_CREDENTIALS_PATH=\"$CREDS_PATH\""
-    echo "  export GOOGLE_OAUTH_TOKEN_PATH=\"$TOKEN_PATH\""
-fi
-
-echo ""
-echo "--- Adding MCP server to Claude Code ---"
-
-MCP_FILE="$HOME/.claude/.mcp.json"
-mkdir -p "$HOME/.claude"
-
-if [ -f "$MCP_FILE" ]; then
-    if grep -q '"google-sheets"' "$MCP_FILE"; then
-        echo "google-sheets MCP server already configured in $MCP_FILE (skipping)"
-    else
-        python3 -c "
-import json
-with open('$MCP_FILE', 'r') as f:
-    config = json.load(f)
-config.setdefault('mcpServers', {})['google-sheets'] = {
-    'type': 'stdio',
-    'command': 'uvx',
-    'args': ['mcp-google-sheets@latest'],
-    'env': {
-        'CREDENTIALS_PATH': '\${GOOGLE_OAUTH_CREDENTIALS_PATH}',
-        'TOKEN_PATH': '\${GOOGLE_OAUTH_TOKEN_PATH}'
-    }
-}
-with open('$MCP_FILE', 'w') as f:
-    json.dump(config, f, indent=2)
-    f.write('\n')
-" && echo "Added google-sheets to $MCP_FILE"
-    fi
-else
-    cat > "$MCP_FILE" << 'MCPEOF'
-{
-  "mcpServers": {
-    "google-sheets": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": ["mcp-google-sheets@latest"],
-      "env": {
-        "CREDENTIALS_PATH": "${GOOGLE_OAUTH_CREDENTIALS_PATH}",
-        "TOKEN_PATH": "${GOOGLE_OAUTH_TOKEN_PATH}"
-      }
-    }
-  }
-}
-MCPEOF
-    echo "Created $MCP_FILE with google-sheets server"
+    echo ""
+    echo "Add these to your shell profile manually:"
+    echo "  export GOOGLE_SHEETS_CLIENT_ID=\"$CLIENT_ID\""
+    echo "  export GOOGLE_SHEETS_CLIENT_SECRET=\"$CLIENT_SECRET\""
+    echo "  export GOOGLE_SHEETS_REFRESH_TOKEN=\"$REFRESH_TOKEN\""
 fi
 
 echo ""
 echo "=== Setup Complete ==="
 echo ""
 echo "Next steps:"
-echo "  1. Restart your terminal (or run: source $SHELL_PROFILE)"
-echo "  2. Start Claude Code"
-echo "  3. Try: 'List my spreadsheets'"
-echo ""
-echo "On first use, a browser window will open asking you to sign in with"
-echo "your Exotel Google account and authorize the app. The auth token is"
-echo "saved to $TOKEN_PATH for future sessions."
+echo "  1. Restart your terminal (or: source $SHELL_PROFILE)"
+echo "  2. Restart Claude Code"
+echo "  3. Try: 'List my Google spreadsheets'"
 echo ""
