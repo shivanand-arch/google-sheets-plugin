@@ -1,6 +1,29 @@
 # Google Sheets Plugin
 
-Access, read, write, analyze, and manage Google Sheets from Claude.
+Access, read, write, analyze, and manage Google Sheets from Claude Code or Claude Cowork.
+
+## Quick Install (For Exotel Colleagues)
+
+Run these 3 commands in your terminal:
+
+```bash
+# 1. If you hit SSH auth errors, rewrite GitHub SSH URLs to HTTPS (uses gh CLI auth)
+git config --global url."https://github.com/".insteadOf "git@github.com:"
+
+# 2. Add the Exotel plugins marketplace
+claude plugin marketplace add shivanand-arch/google-sheets-plugin
+
+# 3. Install the plugin
+claude plugin install google-sheets@exotel-plugins
+```
+
+Then configure your Google credentials:
+
+```bash
+cd ~/.claude/plugins/cache/exotel-plugins/google-sheets/0.1.0 && ./setup.sh
+```
+
+Restart Claude Code and try: *"List my spreadsheets"*
 
 ## Components
 
