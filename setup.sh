@@ -1,10 +1,10 @@
 #!/bin/bash
-# Google Sheets Plugin — Setup Script for Claude Code
+# Google Sheets Plugin — OAuth Setup Script for Claude Code
 # Share this entire folder with colleagues. They run this script to configure everything.
 
 set -e
 
-echo "=== Google Sheets Plugin for Claude Code ==="
+echo "=== Google Sheets Plugin — OAuth Setup ==="
 echo ""
 
 # Check prerequisites
@@ -18,17 +18,33 @@ fi
 echo "Prerequisites OK (uv/uvx found)"
 echo ""
 
-# Prompt for service account path
-read -p "Path to your Google service account JSON key file: " SA_PATH
-SA_PATH="${SA_PATH/#\~/$HOME}"
+echo "This plugin uses OAuth — each user authenticates with their own Exotel"
+echo "Google account. No service account sharing needed."
+echo ""
+echo "PREREQUISITE: You need an OAuth 2.0 Client ID JSON from Google Cloud Console."
+echo ""
+echo "If you don't have one yet:"
+echo "  1. Go to https://console.cloud.google.com/"
+echo "  2. Create a project (or use existing)"
+echo "  3. Enable Google Sheets API and Google Drive API"
+echo "  4. Go to APIs & Services > OAuth consent screen, configure as 'Internal'"
+echo "  5. Go to APIs & Services > Credentials > Create Credentials > OAuth client ID"
+echo "  6. Application type: Desktop app"
+echo "  7. Download the JSON file"
+echo ""
 
-if [ ! -f "$SA_PATH" ]; then
-    echo "ERROR: File not found: $SA_PATH"
+read -p "Path to your OAuth Client ID JSON file: " CREDS_PATH
+CREDS_PATH="${CREDS_PATH/#\~/$HOME}"
+
+if [ ! -f "$CREDS_PATH" ]; then
+    echo "ERROR: File not found: $CREDS_PATH"
     exit 1
 fi
 
-# Optional: Drive folder ID
-read -p "Google Drive folder ID (press Enter to skip): " FOLDER_ID
+# Token storage location
+TOKEN_DIR="$HOME/.claude/google-sheets"
+mkdir -p "$TOKEN_DIR"
+TOKEN_PATH="$TOKEN_DIR/token.json"
 
 echo ""
 echo "--- Adding environment variables to your shell profile ---"
@@ -43,19 +59,21 @@ elif [ -f "$HOME/.bash_profile" ]; then
 fi
 
 if [ -n "$SHELL_PROFILE" ]; then
+    # Remove any old service account config
+    sed -i.bak '/# Google Sheets MCP/,/GOOGLE_DRIVE_FOLDER_ID/d' "$SHELL_PROFILE" 2>/dev/null || true
+    sed -i.bak '/GOOGLE_SERVICE_ACCOUNT_PATH/d' "$SHELL_PROFILE" 2>/dev/null || true
+    sed -i.bak '/GOOGLE_OAUTH_CREDENTIALS_PATH/d' "$SHELL_PROFILE" 2>/dev/null || true
+    sed -i.bak '/GOOGLE_OAUTH_TOKEN_PATH/d' "$SHELL_PROFILE" 2>/dev/null || true
+
     echo "" >> "$SHELL_PROFILE"
-    echo "# Google Sheets MCP (added by google-sheets plugin setup)" >> "$SHELL_PROFILE"
-    echo "export GOOGLE_SERVICE_ACCOUNT_PATH=\"$SA_PATH\"" >> "$SHELL_PROFILE"
-    if [ -n "$FOLDER_ID" ]; then
-        echo "export GOOGLE_DRIVE_FOLDER_ID=\"$FOLDER_ID\"" >> "$SHELL_PROFILE"
-    fi
+    echo "# Google Sheets MCP (OAuth)" >> "$SHELL_PROFILE"
+    echo "export GOOGLE_OAUTH_CREDENTIALS_PATH=\"$CREDS_PATH\"" >> "$SHELL_PROFILE"
+    echo "export GOOGLE_OAUTH_TOKEN_PATH=\"$TOKEN_PATH\"" >> "$SHELL_PROFILE"
     echo "Added to $SHELL_PROFILE"
 else
     echo "Could not find shell profile. Add these manually:"
-    echo "  export GOOGLE_SERVICE_ACCOUNT_PATH=\"$SA_PATH\""
-    if [ -n "$FOLDER_ID" ]; then
-        echo "  export GOOGLE_DRIVE_FOLDER_ID=\"$FOLDER_ID\""
-    fi
+    echo "  export GOOGLE_OAUTH_CREDENTIALS_PATH=\"$CREDS_PATH\""
+    echo "  export GOOGLE_OAUTH_TOKEN_PATH=\"$TOKEN_PATH\""
 fi
 
 echo ""
@@ -65,13 +83,11 @@ MCP_FILE="$HOME/.claude/.mcp.json"
 mkdir -p "$HOME/.claude"
 
 if [ -f "$MCP_FILE" ]; then
-    # Check if google-sheets already exists
     if grep -q '"google-sheets"' "$MCP_FILE"; then
-        echo "google-sheets MCP server already configured in $MCP_FILE"
+        echo "google-sheets MCP server already configured in $MCP_FILE (skipping)"
     else
-        # Use python/node to merge JSON safely
         python3 -c "
-import json, sys
+import json
 with open('$MCP_FILE', 'r') as f:
     config = json.load(f)
 config.setdefault('mcpServers', {})['google-sheets'] = {
@@ -79,25 +95,14 @@ config.setdefault('mcpServers', {})['google-sheets'] = {
     'command': 'uvx',
     'args': ['mcp-google-sheets@latest'],
     'env': {
-        'SERVICE_ACCOUNT_PATH': '\${GOOGLE_SERVICE_ACCOUNT_PATH}',
-        'DRIVE_FOLDER_ID': '\${GOOGLE_DRIVE_FOLDER_ID}'
+        'CREDENTIALS_PATH': '\${GOOGLE_OAUTH_CREDENTIALS_PATH}',
+        'TOKEN_PATH': '\${GOOGLE_OAUTH_TOKEN_PATH}'
     }
 }
 with open('$MCP_FILE', 'w') as f:
     json.dump(config, f, indent=2)
     f.write('\n')
-" 2>/dev/null && echo "Added google-sheets to $MCP_FILE" || {
-            echo "Could not auto-merge. Add this to $MCP_FILE manually under mcpServers:"
-            echo '    "google-sheets": {'
-            echo '      "type": "stdio",'
-            echo '      "command": "uvx",'
-            echo '      "args": ["mcp-google-sheets@latest"],'
-            echo '      "env": {'
-            echo '        "SERVICE_ACCOUNT_PATH": "${GOOGLE_SERVICE_ACCOUNT_PATH}",'
-            echo '        "DRIVE_FOLDER_ID": "${GOOGLE_DRIVE_FOLDER_ID}"'
-            echo '      }'
-            echo '    }'
-        }
+" && echo "Added google-sheets to $MCP_FILE"
     fi
 else
     cat > "$MCP_FILE" << 'MCPEOF'
@@ -108,8 +113,8 @@ else
       "command": "uvx",
       "args": ["mcp-google-sheets@latest"],
       "env": {
-        "SERVICE_ACCOUNT_PATH": "${GOOGLE_SERVICE_ACCOUNT_PATH}",
-        "DRIVE_FOLDER_ID": "${GOOGLE_DRIVE_FOLDER_ID}"
+        "CREDENTIALS_PATH": "${GOOGLE_OAUTH_CREDENTIALS_PATH}",
+        "TOKEN_PATH": "${GOOGLE_OAUTH_TOKEN_PATH}"
       }
     }
   }
@@ -123,7 +128,10 @@ echo "=== Setup Complete ==="
 echo ""
 echo "Next steps:"
 echo "  1. Restart your terminal (or run: source $SHELL_PROFILE)"
-echo "  2. Share your Google Sheets/Drive folder with the service account email"
-echo "     (find it in your JSON key file under 'client_email')"
-echo "  3. Start Claude Code and try: 'List my spreadsheets'"
+echo "  2. Start Claude Code"
+echo "  3. Try: 'List my spreadsheets'"
+echo ""
+echo "On first use, a browser window will open asking you to sign in with"
+echo "your Exotel Google account and authorize the app. The auth token is"
+echo "saved to $TOKEN_PATH for future sessions."
 echo ""

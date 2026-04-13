@@ -4,8 +4,8 @@
       "command": "uvx",
       "args": ["mcp-google-sheets@latest"],
       "env": {
-        "SERVICE_ACCOUNT_PATH": "${GOOGLE_SERVICE_ACCOUNT_PATH}",
-        "DRIVE_FOLDER_ID": "${GOOGLE_DRIVE_FOLDER_ID}"
+        "CREDENTIALS_PATH": "${GOOGLE_OAUTH_CREDENTIALS_PATH}",
+        "TOKEN_PATH": "${GOOGLE_OAUTH_TOKEN_PATH}"
       }
     }
   }

@@ -2,9 +2,16 @@
 
 Access, read, write, analyze, and manage Google Sheets from Claude Code or Claude Cowork.
 
+**Auth**: OAuth 2.0 — each user signs in with their own Exotel Google account on first use. No service account sharing or IT involvement needed.
+
 ## Quick Install (For Exotel Colleagues)
 
-Run these 3 commands in your terminal:
+### Prerequisites
+
+- `uv` installed: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+- An OAuth 2.0 Client ID JSON from Google Cloud Console (see "Getting OAuth Credentials" below)
+
+### Install the Plugin
 
 ```bash
 # 1. If you hit SSH auth errors, rewrite GitHub SSH URLs to HTTPS (uses gh CLI auth)
@@ -17,13 +24,30 @@ claude plugin marketplace add shivanand-arch/google-sheets-plugin
 claude plugin install google-sheets@exotel-plugins
 ```
 
-Then configure your Google credentials:
+### Configure OAuth
 
 ```bash
 cd ~/.claude/plugins/cache/exotel-plugins/google-sheets/0.1.0 && ./setup.sh
 ```
 
-Restart Claude Code and try: *"List my spreadsheets"*
+Restart Claude Code. On first query, a browser window will open asking you to sign in with your Exotel account. The auth token persists for future sessions.
+
+## Getting OAuth Credentials
+
+One-time GCP setup (required per user, or one shared credential can work for the whole org):
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a project (or use an existing one)
+3. Enable **Google Sheets API** and **Google Drive API**
+4. Go to **APIs & Services > OAuth consent screen**
+   - User Type: **Internal** (restricts to exotel.com users only)
+   - Fill in app name (e.g., "Claude Google Sheets Plugin")
+5. Go to **APIs & Services > Credentials > Create Credentials > OAuth client ID**
+   - Application type: **Desktop app**
+   - Download the JSON file
+6. Run `./setup.sh` and point it at the downloaded JSON
+
+**Tip**: If you want to share a single OAuth Client ID across all Exotel colleagues, create it once in a shared GCP project under exotel.com and distribute the `client_secret.json` file. Each colleague still authenticates with their own Google account on first use — they just use the same OAuth app identity.
 
 ## Components
 
@@ -35,46 +59,29 @@ Restart Claude Code and try: *"List my spreadsheets"*
 | Skill | `manage-sheets` | Create spreadsheets, add/rename tabs, share access |
 | Skill | `analyze-sheets` | Summarize data, detect trends, pivot, chart, compare |
 
-## Setup
+## Usage
 
-### Prerequisites
+Once installed, use natural language:
 
-- **Python 3.10+** and **uvx** (install via `pip install uv` or `pipx install uv`)
-- A **Google Cloud project** with the Google Sheets API and Google Drive API enabled
-- A **Service Account** with a JSON key file
+- "List my spreadsheets"
+- "Read the Sales Q1 sheet"
+- "Add a row to the inventory spreadsheet"
+- "Create a new spreadsheet called Budget 2026"
+- "Analyze trends in the revenue sheet"
+- "Add a bar chart for monthly sales"
 
-### Step 1: Create a Google Cloud Service Account
+## Manual Configuration (Alternative)
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project (or use an existing one)
-3. Enable the **Google Sheets API** and **Google Drive API**
-4. Go to **IAM & Admin > Service Accounts** and create a new service account
-5. Create a JSON key for the service account and download it
-6. Note the service account email (e.g., `my-sa@project-id.iam.gserviceaccount.com`)
+If `setup.sh` doesn't work for you, configure manually:
 
-### Step 2: Share Your Sheets
-
-Share any spreadsheets (or a Drive folder) with the service account email address, granting **Editor** access.
-
-### Step 3: Quick Setup (Recommended)
-
-Run the setup script — it handles env vars and MCP config automatically:
+**a) Add to your `~/.zshrc` or `~/.bashrc`:**
 
 ```bash
-cd google-sheets
-./setup.sh
+export GOOGLE_OAUTH_CREDENTIALS_PATH="/path/to/client_secret.json"
+export GOOGLE_OAUTH_TOKEN_PATH="$HOME/.claude/google-sheets/token.json"
 ```
 
-### Step 3 (Manual Alternative): Set Up Yourself
-
-**a) Set environment variables** in your `~/.zshrc` or `~/.bashrc`:
-
-```bash
-export GOOGLE_SERVICE_ACCOUNT_PATH="/path/to/your/service-account-key.json"
-export GOOGLE_DRIVE_FOLDER_ID="your_drive_folder_id"  # optional
-```
-
-**b) Add the MCP server** to `~/.claude/.mcp.json` (merge into existing `mcpServers`):
+**b) Add to `~/.claude/.mcp.json` under `mcpServers`:**
 
 ```json
 "google-sheets": {
@@ -82,40 +89,17 @@ export GOOGLE_DRIVE_FOLDER_ID="your_drive_folder_id"  # optional
   "command": "uvx",
   "args": ["mcp-google-sheets@latest"],
   "env": {
-    "SERVICE_ACCOUNT_PATH": "${GOOGLE_SERVICE_ACCOUNT_PATH}",
-    "DRIVE_FOLDER_ID": "${GOOGLE_DRIVE_FOLDER_ID}"
+    "CREDENTIALS_PATH": "${GOOGLE_OAUTH_CREDENTIALS_PATH}",
+    "TOKEN_PATH": "${GOOGLE_OAUTH_TOKEN_PATH}"
   }
 }
 ```
 
-**c) Restart your terminal** and start Claude Code.
-
-### Step 4: Install Skills (Optional — for Cowork)
-
-Install the `.plugin` file in Claude Cowork for guided skill support. In Claude Code, the MCP server alone gives you full access — the skills are a bonus for structured workflows.
-
-## Usage
-
-Once installed, you can use natural language:
-
-- "List my spreadsheets"
-- "Read the Sales Q1 sheet"
-- "Add a row to the inventory spreadsheet"
-- "Create a new spreadsheet called Budget 2026"
-- "Analyze trends in the revenue sheet"
-- "Share the report spreadsheet with alice@company.com"
-- "Add a bar chart for monthly sales"
+**c) Restart your terminal and Claude Code.**
 
 ## Skills Reference
 
-### read-sheets
-Triggers on: "read spreadsheet", "get data from sheets", "list spreadsheets", "find a spreadsheet", "show formulas"
-
-### write-sheets
-Triggers on: "update spreadsheet", "write to sheets", "add rows", "format cells", "add a formula"
-
-### manage-sheets
-Triggers on: "create spreadsheet", "add a tab", "rename sheet", "share spreadsheet", "copy sheet"
-
-### analyze-sheets
-Triggers on: "analyze spreadsheet", "summarize data", "find trends", "pivot table", "compare sheets", "chart this data"
+- **read-sheets**: "read spreadsheet", "get data from sheets", "list spreadsheets", "find a spreadsheet", "show formulas"
+- **write-sheets**: "update spreadsheet", "write to sheets", "add rows", "format cells", "add a formula"
+- **manage-sheets**: "create spreadsheet", "add a tab", "rename sheet", "share spreadsheet", "copy sheet"
+- **analyze-sheets**: "analyze spreadsheet", "summarize data", "find trends", "pivot table", "compare sheets", "chart this data"

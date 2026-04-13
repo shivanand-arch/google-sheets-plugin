@@ -1,6 +1,6 @@
 {
   "name": "google-sheets",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Access, read, write, analyze, and manage Google Sheets — create spreadsheets, manipulate data, apply formatting, and run analysis",
   "author": {
     "name": "Shivanand"

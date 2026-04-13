@@ -1,6 +1,6 @@
 {
   "name": "exotel-plugins",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Exotel internal plugins for Claude Code",
   "owner": {
     "name": "Exotel",
@@ -10,7 +10,7 @@
     {
       "name": "google-sheets",
       "source": "./",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "Access, read, write, analyze, and manage Google Sheets"
     }
   ]
